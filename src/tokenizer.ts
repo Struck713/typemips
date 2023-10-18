@@ -61,12 +61,29 @@ const IDENFITIFER_REGEX = /[a-zA-Z0-9_]/;
 const QUOTE = "\"";
 
 /**
+ * Tokenize an entire file of MIPS Assembly code.
+ * 
+ * @param text All of the lines in the file
+ * @returns The tokens for the entire file
+ */
+export const tokenize = (text: string) => {
+    let tokens: Token[] = [];
+
+    // split the text into lines
+    let lines = text.split("\n");
+    for (let line of lines) tokens.push(...tokenizeLine(line));
+
+    tokens.push({ type: TokenType.EOF, value: "EOF" });
+    return tokens;
+}
+
+/**
  * Since MIPS Assembly is line-by-line, we can tokenize a single line at a time.
  * 
  * @param line The line of source to tokenize
  * @returns 
  */
-export const tokenize = (line: string) => {
+export const tokenizeLine = (line: string) => {
     
     let tokens: Token[] = [];
     let cursor = 0;

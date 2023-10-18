@@ -1,8 +1,38 @@
 import { expect, test } from '@jest/globals';
-import { Token, TokenType, tokenize } from "../src/tokenizer";
+import { Token, TokenType, tokenize, tokenizeLine } from "../src/tokenizer";
+import { readFileSync } from 'fs';
 
 // helper function to make test cases less redundent
-const tester = (line: string, expected: Token[]) => test(`tokenize: ${line}`, () => expect(tokenize(line)).toStrictEqual(expected));
+const tester = (line: string, expected: Token[]) => test(`tokenize: ${line}`, () => expect(tokenizeLine(line)).toStrictEqual(expected));
+const fileTester = (file: string, expected: Token[]) => test(`tokenize file: ${file}`, () => expect(tokenize(readFileSync(`asm/${file}`, "utf-8"))).toStrictEqual(expected));
+
+// this one is crazy LOL
+fileTester("hello.asm", [
+    { type: TokenType.IDENTIFIER, value: "data" },
+    { type: TokenType.IDENTIFIER, value: "msg" },
+    { type: TokenType.COLON, value: ":" },
+    { type: TokenType.IDENTIFIER, value: "asciiz" },
+    { type: TokenType.STRING, value: "\\nHello, World!\\n" },
+    { type: TokenType.IDENTIFIER, value: "text" },
+    { type: TokenType.IDENTIFIER, value: "main" },
+    { type: TokenType.COLON, value: ":" },
+    { type: TokenType.IDENTIFIER, value: "li" },
+    { type: TokenType.REGISTER, value: "$v0" },
+    { type: TokenType.COMMA, value: "," },
+    { type: TokenType.IMMEDIATE, value: "4" },
+    { type: TokenType.IDENTIFIER, value: "la" },
+    { type: TokenType.REGISTER, value: "$a0" },
+    { type: TokenType.COMMA, value: "," },
+    { type: TokenType.IDENTIFIER, value: "msg" },
+    { type: TokenType.IDENTIFIER, value: "syscall" },
+    { type: TokenType.IDENTIFIER, value: "li" },
+    { type: TokenType.REGISTER, value: "$v0" },
+    { type: TokenType.COMMA, value: "," },
+    { type: TokenType.IMMEDIATE, value: "10" },
+    { type: TokenType.IDENTIFIER, value: "syscall" },
+    { type: TokenType.EOF, value: "EOF" }
+
+]);
 
 // simple mips la instruction
 tester("la $t0, label", [
