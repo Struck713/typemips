@@ -39,19 +39,26 @@ export enum Instructions {
 
 export enum TokenType {
     REGISTER = "register",
-    IMMEDIATE = "immediate",
-    LABEL = "label",
-    INSTRUCTION = "instruction",
+    IDENTIFIER = "identifier",
     COMMA = "comma",
+    COLON = "colon",
     OPEN_PARENTHESIS = "open_parenthesis",
     CLOSE_PARENTHESIS = "close_parenthesis",
     NEWLINE = "newline",
     WHITESPACE = "whitespace",
     COMMENT = "comment",
+    IMMEDIATE = "immediate",
+    STRING = "string",
     EOF = "eof"
 }
 
 export type Token = { type: TokenType, value: string }
+
+const NUMBER_REGEX = /[0-9]/;
+const ALPHABET_REGEX = /[a-zA-Z]/;
+const REGISTER_REGEX = /[a-zA-Z0-9]/;
+const IDENFITIFER_REGEX = /[a-zA-Z0-9_]/;
+const QUOTE = "\"";
 
 /**
  * Since MIPS Assembly is line-by-line, we can tokenize a single line at a time.
@@ -69,33 +76,35 @@ export const tokenize = (line: string) => {
     }
 
     const peek = () => {
-        return line[cursor];
+        return line[cursor] ?? '\0';
     }
 
     while (cursor < line.length) {
         let char = next();
-        if (char === ",") tokens.push({ type: TokenType.COMMA, value: char });
+        if (char === "#") break; // end the parsing with the comment
+        else if (char === ",") tokens.push({ type: TokenType.COMMA, value: char });
+        else if (char === ":") tokens.push({ type: TokenType.COLON, value: char });
         else if (char === "(") tokens.push({ type: TokenType.OPEN_PARENTHESIS, value: char });
         else if (char === ")") tokens.push({ type: TokenType.CLOSE_PARENTHESIS, value: char });
-        else if (char.match(/[a-zA-Z]/)) {
+        else if (char === QUOTE) {
+            let value = "";
+            while (peek() !== QUOTE) value += next();
+            next(); // consume the closing quote
+            tokens.push({ type: TokenType.STRING, value });
+        } else if (char.match(ALPHABET_REGEX)) {
             let value = char;
-            while (peek().match(/[a-zA-Z0-9_]/)) value += next();
-            tokens.push({ type: TokenType.INSTRUCTION, value });
-        } else if (char.match(/[0-9]/)) {
+            while (peek().match(IDENFITIFER_REGEX)) value += next();
+            tokens.push({ type: TokenType.IDENTIFIER, value });
+        } else if (char.match(NUMBER_REGEX)) {
             let value = char;
-            while (peek().match(/[0-9]/)) value += next();
+            while (peek().match(NUMBER_REGEX)) value += next();
             tokens.push({ type: TokenType.IMMEDIATE, value });
         } else if (char === "$") {
             let value = char;
-            while (peek().match(/[a-zA-Z0-9]/)) value += next();
+            while (peek().match(REGISTER_REGEX)) value += next();
             tokens.push({ type: TokenType.REGISTER, value });
-        } else if (char === ":") {
-            let value = char;
-            while (peek().match(/[a-zA-Z0-9_]/)) value += next();
-            tokens.push({ type: TokenType.LABEL, value });
         }
     }
 
-    tokens.push({ type: TokenType.EOF, value: "" });
     return tokens;
 }
