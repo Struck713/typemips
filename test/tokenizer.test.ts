@@ -12,7 +12,7 @@ fileTester("hello.asm", [
     { type: TokenType.IDENTIFIER, value: "msg" },
     { type: TokenType.COLON, value: ":" },
     { type: TokenType.IDENTIFIER, value: "asciiz" },
-    { type: TokenType.STRING, value: "\\nHello, World!\\n" },
+    { type: TokenType.STRING, value: "\nHello, World!\n" },
     { type: TokenType.IDENTIFIER, value: "text" },
     { type: TokenType.IDENTIFIER, value: "main" },
     { type: TokenType.COLON, value: ":" },

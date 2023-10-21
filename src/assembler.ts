@@ -26,6 +26,7 @@ class Assembler {
                 else if (this.peek().type == TokenType.COLON) this.assemble_label();
             }
         }
+        console.log(this.environment);
     }
 
     assemble_instruction = (instruction: Instructions) => {
@@ -52,13 +53,29 @@ class Assembler {
             this.next(); // skip the colon
             let next = this.peek();
             if (next.type === TokenType.IDENTIFIER) { // modify the environment (or not)
+
+                // ascii string
                 if (next.value == "asciiz") {
                     this.next();
                     let string = this.peek();
                     if (string.type == TokenType.STRING) this.environment[label.value] = string.value;
                     else throw new Error(`Expected string, got ${string.value}`);
+                    return;
                 }
-                // do nothing, we only need to register the asciiz label
+
+                // could be a word
+                if (next.value == "word") {
+                    this.next();
+                    let string = this.peek();
+                    if (string.type == TokenType.STRING) this.environment[label.value] = string.value;
+                    else throw new Error(`Expected string, got ${string.value}`);
+                    return;
+                }
+
+
+                // if it is a label that is NOT a word or a string, then it is a group of code, we want the cursor to go back to the label
+                this.environment[label.value] = this.cursor;
+
             }
         };
     }
@@ -68,7 +85,7 @@ class Assembler {
         if (type === 4) {
             let address = this.environment["$a0"];
             let string = this.environment[address];
-            console.log(string);
+            process.stdout.write(string as string, 'ascii');
         }
     }
 

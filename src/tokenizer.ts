@@ -89,7 +89,16 @@ export const tokenizeLine = (line: string) => {
     let cursor = 0;
 
     const next = () => {
-        return line[cursor++];
+        let char = line[cursor++];
+        if (char === "\\") {
+            char = line[cursor++];
+            if (char === "n") return "\n";
+            else if (char === "t") return "\t";
+            else if (char === "\\") return "\\";
+            else if (char === "\"") return "\"";
+            else throw new Error(`Invalid escape sequence: \\${char}`);
+        }
+        return char;
     }
 
     const peek = () => {
