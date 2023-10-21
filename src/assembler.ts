@@ -1,6 +1,7 @@
 import { parse } from "path";
 import { Instructions, Token, TokenType } from "./tokenizer";
 import { env } from "process";
+import { read } from "./utils/console";
 
 class Assembler {
 
@@ -16,13 +17,13 @@ class Assembler {
         this.environment = {};
     }
 
-    assemble = () => {
+    assemble = async () => {
         const instructions = Object.values(Instructions);
         while (this.cursor < this.tokens.length) {
             let { type, value } = this.next();
             if (type == TokenType.IDENTIFIER) {
                 if (instructions.includes(value as Instructions)) this.assemble_instruction(value as Instructions);
-                else if (value === "syscall") this.assemble_syscall();
+                else if (value === "syscall") await this.assemble_syscall();
                 else if (this.peek().type == TokenType.COLON) this.assemble_label();
             }
         }
@@ -44,6 +45,14 @@ class Assembler {
                 let label = this.parse_address();
                 this.environment[register] = label;
                 break;
+            case Instructions.MOVE:
+                let registerTo = this.parse_register();
+                this.cursor++; // skip the comma
+                let registerFrom = this.parse_register();
+                this.environment[registerTo] = this.environment[registerFrom];
+                break;
+            default:
+                throw new Error(`Instruction ${instruction} not implemented`);
         }
     }
 
@@ -80,13 +89,23 @@ class Assembler {
         };
     }
 
-    assemble_syscall = () => {
+    // https://courses.missouristate.edu/kenvollmar/mars/help/syscallhelp.html
+    assemble_syscall = async () => {
         let type = this.environment["$v0"];
+
+        // print a ascii string
         if (type === 4) {
             let address = this.environment["$a0"];
             let string = this.environment[address];
             process.stdout.write(string as string, 'ascii');
         }
+
+        // read an integer
+        if (type === 5) {
+            this.environment["$v0"] = await read(process.stdin);
+        }
+
+
     }
 
     parse_register = () => {
