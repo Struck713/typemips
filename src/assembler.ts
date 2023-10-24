@@ -1,6 +1,6 @@
 import { parse } from "path";
 import { Instructions, Token, TokenType } from "./tokenizer";
-import { env } from "process";
+import { env, exit } from "process";
 import { read } from "./utils/console";
 
 class Assembler {
@@ -17,22 +17,40 @@ class Assembler {
         this.environment = {};
     }
 
+    /**
+     * We need to do a preprocessor pass to collect all of the labels for jumping, since you
+     * can technically jump forward or backwards in MIPS at will.
+     */
+    preprocess = () => {
+        while (this.cursor < this.tokens.length) {
+            let { type } = this.next();
+            if (type == TokenType.IDENTIFIER) {
+                if (this.peek().type == TokenType.COLON) this.assemble_label();
+            }
+        }
+        this.cursor = 0;
+    }
+
     assemble = async () => {
+
+        this.preprocess(); // preprocess labels
+
         const instructions = Object.values(Instructions);
         while (this.cursor < this.tokens.length) {
             let { type, value } = this.next();
             if (type == TokenType.IDENTIFIER) {
                 if (instructions.includes(value as Instructions)) this.assemble_instruction(value as Instructions);
                 else if (value === "syscall") await this.assemble_syscall();
-                else if (this.peek().type == TokenType.COLON) this.assemble_label();
             }
         }
         console.log(this.environment);
     }
 
     assemble_instruction = (instruction: Instructions) => {
-        let register;
+        let register, addressTo, registerFrom, registerTo, registerLeft, registerRight;
         switch (instruction) {
+
+            // LOAD AND STORE
             case Instructions.LOAD_IMMEDIATE:
                 register = this.parse_register();
                 this.cursor++; // skip the comma
@@ -46,11 +64,59 @@ class Assembler {
                 this.environment[register] = label;
                 break;
             case Instructions.MOVE:
-                let registerTo = this.parse_register();
+                registerTo = this.parse_register();
                 this.cursor++; // skip the comma
-                let registerFrom = this.parse_register();
+                registerFrom = this.parse_register();
                 this.environment[registerTo] = this.environment[registerFrom];
                 break;
+
+            // ARITMETIC OPERATIONS
+            case Instructions.ADD:
+                registerTo = this.parse_register();
+                this.cursor++; // skip the comma
+                registerLeft = this.parse_register();
+                this.cursor++; // skip the comma
+                registerRight = this.parse_register();
+                this.environment[registerTo] = (Number(this.environment[registerLeft]) + Number(this.environment[registerRight]));
+                break;
+            case Instructions.SUBTRACT:
+                registerTo = this.parse_register();
+                this.cursor++; // skip the comma
+                registerLeft = this.parse_register();
+                this.cursor++; // skip the comma
+                registerRight = this.parse_register();
+                this.environment[registerTo] = (Number(this.environment[registerLeft]) - Number(this.environment[registerRight]));
+                break;
+            case Instructions.SET_ON_LESS_THAN:
+                registerTo = this.parse_register();
+                this.cursor++; // skip the comma
+                registerLeft = this.parse_register();
+                this.cursor++; // skip the comma
+                registerRight = this.parse_register();
+                this.environment[registerTo] = (this.environment[registerLeft] < this.environment[registerRight]) ? 1 : 0;
+                break;
+
+            // BRANCHING
+            case Instructions.JUMP_AND_LINK:
+                this.environment["$ra"] = this.cursor + 1;
+            case Instructions.JUMP:
+                addressTo = this.parse_address();
+                this.cursor = this.environment[addressTo] as number;
+                break;
+            case Instructions.JUMP_AND_LINK_REGISTER:
+                registerTo = this.parse_register();
+                this.cursor = this.environment[registerTo] as number;
+                break;
+            case Instructions.BRANCH_ON_NOT_EQUAL:
+                registerLeft = this.parse_register();
+                this.cursor++; // skip the comma
+                registerRight = this.parse_register();
+                this.cursor++; // skip the comma
+                addressTo = this.parse_address();
+                if (this.environment[registerLeft] !== this.environment[registerRight]) 
+                    this.cursor = this.environment[addressTo] as number;
+                break;
+            
             default:
                 throw new Error(`Instruction ${instruction} not implemented`);
         }
@@ -93,19 +159,25 @@ class Assembler {
     assemble_syscall = async () => {
         let type = this.environment["$v0"];
 
-        // print a ascii string
-        if (type === 4) {
-            let address = this.environment["$a0"];
-            let string = this.environment[address];
-            process.stdout.write(string as string, 'ascii');
+        switch (type) {
+            case 1:
+                process.stdout.write(this.environment["$a0"] as string, 'ascii');
+                break;
+            case 4: // print null terminated string
+                let address = this.environment["$a0"];
+                let string = this.environment[address];
+                process.stdout.write(string as string, 'ascii');
+                break;
+            case 5: // read integer from standard input
+                this.environment["$v0"] = await read(process.stdin);
+                break;
+            case 10: // terminate program
+                exit(0);
+                break;
+            default:
+                throw new Error(`Syscall ${type} is not implemented!`);
         }
-
-        // read an integer
-        if (type === 5) {
-            this.environment["$v0"] = await read(process.stdin);
-        }
-
-
+        
     }
 
     parse_register = () => {
