@@ -1,7 +1,8 @@
 import { parse } from "path";
 import { Instructions, Token, TokenType } from "./tokenizer";
 import { env, exit } from "process";
-import { read } from "./utils/console";
+import { read, write } from "./utils/console";
+import { EOF } from "dns";
 
 class Assembler {
 
@@ -14,7 +15,9 @@ class Assembler {
     constructor(tokens: Token[]) {
         this.cursor = 0;
         this.tokens = tokens;
-        this.environment = {};
+        this.environment = {
+            "$0": 0,
+        };
     }
 
     /**
@@ -24,9 +27,8 @@ class Assembler {
     preprocess = () => {
         while (this.cursor < this.tokens.length) {
             let { type } = this.next();
-            if (type == TokenType.IDENTIFIER) {
-                if (this.peek().type == TokenType.COLON) this.assemble_label();
-            }
+            if (type == TokenType.IDENTIFIER && this.peek().type == TokenType.COLON) 
+                this.assemble_label();
         }
         this.cursor = 0;
     }
@@ -41,9 +43,12 @@ class Assembler {
             if (type == TokenType.IDENTIFIER) {
                 if (instructions.includes(value as Instructions)) this.assemble_instruction(value as Instructions);
                 else if (value === "syscall") await this.assemble_syscall();
+                //else throw new Error(`Identifier "${value}" was not recognized!`);
             }
+
+            // exit abnormally if we hit the end of the file
+            // if(type == TokenType.EOF) exit(1); 
         }
-        console.log(this.environment);
     }
 
     assemble_instruction = (instruction: Instructions) => {
@@ -55,19 +60,19 @@ class Assembler {
                 register = this.parse_register();
                 this.cursor++; // skip the comma
                 let immediate = this.parse_immediate();
-                this.environment[register] = immediate;
+                this.write_environment(register, immediate);
                 break;
             case Instructions.LOAD_ADDRESS:
                 register = this.parse_register();
                 this.cursor++; // skip the comma
                 let label = this.parse_address();
-                this.environment[register] = label;
+                this.write_environment(register, label)
                 break;
             case Instructions.MOVE:
                 registerTo = this.parse_register();
                 this.cursor++; // skip the comma
                 registerFrom = this.parse_register();
-                this.environment[registerTo] = this.environment[registerFrom];
+                this.write_environment(registerTo, this.read_environment(registerFrom));
                 break;
 
             // ARITMETIC OPERATIONS
@@ -77,7 +82,7 @@ class Assembler {
                 registerLeft = this.parse_register();
                 this.cursor++; // skip the comma
                 registerRight = this.parse_register();
-                this.environment[registerTo] = (Number(this.environment[registerLeft]) + Number(this.environment[registerRight]));
+                this.write_environment(registerTo, (this.read_environment<number>(registerLeft) + this.read_environment<number>(registerRight)));
                 break;
             case Instructions.SUBTRACT:
                 registerTo = this.parse_register();
@@ -85,7 +90,7 @@ class Assembler {
                 registerLeft = this.parse_register();
                 this.cursor++; // skip the comma
                 registerRight = this.parse_register();
-                this.environment[registerTo] = (Number(this.environment[registerLeft]) - Number(this.environment[registerRight]));
+                this.write_environment(registerTo, (this.read_environment<number>(registerLeft) - this.read_environment<number>(registerRight)));
                 break;
             case Instructions.SET_ON_LESS_THAN:
                 registerTo = this.parse_register();
@@ -93,19 +98,27 @@ class Assembler {
                 registerLeft = this.parse_register();
                 this.cursor++; // skip the comma
                 registerRight = this.parse_register();
-                this.environment[registerTo] = (this.environment[registerLeft] < this.environment[registerRight]) ? 1 : 0;
+                this.write_environment(registerTo, (this.read_environment(registerLeft) < this.read_environment(registerRight)) ? 1 : 0);
                 break;
 
             // BRANCHING
-            case Instructions.JUMP_AND_LINK:
-                this.environment["$ra"] = this.cursor + 1;
+            case Instructions.JUMP_AND_LINK: this.write_environment("$ra", this.cursor + 1);
             case Instructions.JUMP:
                 addressTo = this.parse_address();
-                this.cursor = this.environment[addressTo] as number;
+                this.cursor = this.read_environment<number>(addressTo);
                 break;
             case Instructions.JUMP_AND_LINK_REGISTER:
                 registerTo = this.parse_register();
-                this.cursor = this.environment[registerTo] as number;
+                this.cursor = this.read_environment<number>(registerTo);
+                break;
+            case Instructions.BRANCH_ON_EQUAL:
+                registerLeft = this.parse_register();
+                this.cursor++; // skip the comma
+                registerRight = this.parse_register();
+                this.cursor++; // skip the comma
+                addressTo = this.parse_address();
+                if (this.read_environment<number>(registerLeft) === this.read_environment<number>(registerRight)) 
+                    this.cursor = this.read_environment<number>(addressTo);
                 break;
             case Instructions.BRANCH_ON_NOT_EQUAL:
                 registerLeft = this.parse_register();
@@ -113,8 +126,8 @@ class Assembler {
                 registerRight = this.parse_register();
                 this.cursor++; // skip the comma
                 addressTo = this.parse_address();
-                if (this.environment[registerLeft] !== this.environment[registerRight]) 
-                    this.cursor = this.environment[addressTo] as number;
+                if (this.read_environment<number>(registerLeft) !== this.read_environment<number>(registerRight)) 
+                    this.cursor = this.read_environment<number>(addressTo);
                 break;
             
             default:
@@ -133,7 +146,7 @@ class Assembler {
                 if (next.value == "asciiz") {
                     this.next();
                     let string = this.peek();
-                    if (string.type == TokenType.STRING) this.environment[label.value] = string.value;
+                    if (string.type == TokenType.STRING) this.write_environment(label.value, string.value);
                     else throw new Error(`Expected string, got ${string.value}`);
                     return;
                 }
@@ -142,38 +155,38 @@ class Assembler {
                 if (next.value == "word") {
                     this.next();
                     let string = this.peek();
-                    if (string.type == TokenType.STRING) this.environment[label.value] = string.value;
+                    if (string.type == TokenType.STRING) this.write_environment(label.value, string.value);
                     else throw new Error(`Expected string, got ${string.value}`);
                     return;
                 }
 
-
                 // if it is a label that is NOT a word or a string, then it is a group of code, we want the cursor to go back to the label
-                this.environment[label.value] = this.cursor;
-
+                this.write_environment(label.value, this.cursor);
             }
         };
     }
 
     // https://courses.missouristate.edu/kenvollmar/mars/help/syscallhelp.html
     assemble_syscall = async () => {
-        let type = this.environment["$v0"];
+        let type = this.read_environment("$v0");
 
         switch (type) {
-            case 1:
-                process.stdout.write(this.environment["$a0"] as string, 'ascii');
+            case 1: 
+                write(this.read_environment("$a0"), process.stdout); 
                 break;
             case 4: // print null terminated string
-                let address = this.environment["$a0"];
-                let string = this.environment[address];
-                process.stdout.write(string as string, 'ascii');
+                let address = this.read_environment("$a0");
+                let string = this.read_environment(address as string);
+                write(string, process.stdout);
                 break;
             case 5: // read integer from standard input
-                this.environment["$v0"] = await read(process.stdin);
+                this.write_environment("$v0", Number(await read(process.stdin)));
                 break;
             case 10: // terminate program
                 exit(0);
                 break;
+            case 11: // print character
+
             default:
                 throw new Error(`Syscall ${type} is not implemented!`);
         }
@@ -182,22 +195,24 @@ class Assembler {
 
     parse_register = () => {
         let { type, value } = this.next();
-        if (type == TokenType.REGISTER) return value;
+        if (type == TokenType.REGISTER) return value as string;
         else throw new Error(`Expected register, got ${value}`);
     }
     
     parse_immediate = () => {
         let { type, value } = this.next();
-        if (type == TokenType.IMMEDIATE) return Number(value);
+        if (type == TokenType.IMMEDIATE) return parseInt(value);
         else throw new Error(`Expected immediate value, got ${value}`);
     }
 
     parse_address = () => {
         let { type, value } = this.next();
-        if (type == TokenType.IDENTIFIER) return value;
+        if (type == TokenType.IDENTIFIER) return value as string;
         else throw new Error(`Expected address value, got ${value}`);
     }
 
+    read_environment = <T = string | number>(key: string) => this.environment[key] as T ?? 0;
+    write_environment = (key: string, value: string | number) => this.environment[key] = value;
     next = () => this.tokens[this.cursor++];
     peek = () => this.tokens[this.cursor];
     peekLast = () => this.tokens[this.cursor - 1] ?? { type: TokenType.EOF, value: "EOF" };
@@ -206,5 +221,6 @@ class Assembler {
 
 export const assemble = (tokens: Token[]) => {
     const assembler: Assembler = new Assembler(tokens);
-    return assembler.assemble();
+    assembler.assemble();
+    return assembler;
 }

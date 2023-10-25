@@ -7,3 +7,5 @@ export const read = async (stream: NodeJS.ReadStream): Promise<string> => {
         stream.on("error", (err) => reject(err));
     });
 }
+
+export const write = (string: string | number, stream: NodeJS.WritableStream) => stream.write(String(string), "ascii");

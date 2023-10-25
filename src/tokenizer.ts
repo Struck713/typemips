@@ -49,16 +49,19 @@ export enum TokenType {
     COMMENT = "comment",
     IMMEDIATE = "immediate",
     STRING = "string",
+    CHARACTER = "character",
     EOF = "eof"
 }
 
 export type Token = { type: TokenType, value: string }
 
-const NUMBER_REGEX = /[0-9]/;
+const NUMBER_REGEX = /[xa-fA-F0-9]+/;
 const ALPHABET_REGEX = /[a-zA-Z]/;
 const REGISTER_REGEX = /[a-zA-Z0-9]/;
 const IDENFITIFER_REGEX = /[a-zA-Z0-9_]/;
-const QUOTE = "\"";
+
+const QUOTE = "'";
+const DOUBLE_QUOTE = "\"";
 
 /**
  * Tokenize an entire file of MIPS Assembly code.
@@ -112,10 +115,15 @@ export const tokenizeLine = (line: string) => {
         else if (char === ":") tokens.push({ type: TokenType.COLON, value: char });
         else if (char === "(") tokens.push({ type: TokenType.OPEN_PARENTHESIS, value: char });
         else if (char === ")") tokens.push({ type: TokenType.CLOSE_PARENTHESIS, value: char });
-        else if (char === QUOTE) {
+        // else if (char === QUOTE) {
+        //     let value = next();
+        //     next(); // consume the closing quote
+        //     tokens.push({ type: TokenType.CHARACTER, value });
+        // } 
+        else if (char === DOUBLE_QUOTE) {
             let value = "";
-            while (peek() !== QUOTE) value += next();
-            next(); // consume the closing quote
+            while (peek() !== DOUBLE_QUOTE) value += next();
+            next(); // consume the closing double quote
             tokens.push({ type: TokenType.STRING, value });
         } else if (char.match(ALPHABET_REGEX)) {
             let value = char;
